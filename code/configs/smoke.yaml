@@ -1,0 +1,30 @@
+# Offline pipeline check. This random byte model does not perform language understanding.
+seed: 42
+data: data/demo_scenarios.jsonl
+output_dir: outputs/smoke
+model:
+  backend: tiny
+  hidden_size: 32
+  max_input_tokens: 16384
+generation: {}
+simulator:
+  backend: scripted
+environment:
+  max_turns: 12
+reward:
+  correct: 1.0
+  incorrect: -1.0
+  incomplete: -0.2
+  turn_cost: 0.02
+ppo:
+  learning_rate: 0.001
+  updates: 2
+  sessions_per_update: 3
+  epochs: 2
+  minibatch_size: 8
+  gamma: 1.0
+  gae_lambda: 0.95
+  clip_ratio: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.01
+  max_grad_norm: 1.0
