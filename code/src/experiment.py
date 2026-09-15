@@ -19,6 +19,7 @@ from .llm import HTTPTextGenerator, PROMPT_VERSION
 from .model import build_tiny_policy, load_llm_policy
 from .questionnaire import QUESTIONNAIRE_VERSION
 from .reward import REWARD_VERSION, RewardConfig
+from .summary import LLMClosingSummarizer, SUMMARY_VERSION, TemplateClosingSummarizer
 from .user_simulator import LLMUserSimulator, ScriptedUserSimulator
 
 CODE_ROOT = Path(__file__).resolve().parents[1]
@@ -66,21 +67,25 @@ def build_runtime(config: dict):
             raise ValueError("tiny requires scripted simulation and empty generation settings")
         model = build_tiny_policy(**model_config)
         questioner, assessor, simulator = TemplateQuestioner(), DemoAssessor(), ScriptedUserSimulator()
+        summarizer = TemplateClosingSummarizer()
     elif backend == "llm":
         if simulator_backend != "http":
             raise ValueError("The LLM experiment requires an HTTP user simulator")
-        if set(config["generation"]) != {"question_max_tokens", "assessment_max_tokens"}:
+        generation = dict(config["generation"])
+        summary_tokens = generation.pop("summary_max_tokens", 768)
+        if set(generation) != {"question_max_tokens", "assessment_max_tokens"}:
             raise ValueError("Unknown generation settings")
         model = load_llm_policy(**model_config)
         questioner = LLMQuestioner(model, config["generation"]["question_max_tokens"])
         assessor = LLMAssessor(model, config["generation"]["assessment_max_tokens"])
+        summarizer = LLMClosingSummarizer(model, summary_tokens)
         max_tokens = simulator_config.pop("max_tokens")
         simulator = LLMUserSimulator(HTTPTextGenerator(**simulator_config), max_tokens)
     else:
         raise ValueError(f"Unknown model backend: {backend}")
     reward = RewardConfig(**config["reward"])
-    env = FoodInterviewEnv(questioner, assessor, simulator, reward, **config["environment"])
-    return SimpleNamespace(model=model, questioner=questioner, assessor=assessor, env=env)
+    env = FoodInterviewEnv(questioner, assessor, simulator, reward, summarizer=summarizer, **config["environment"])
+    return SimpleNamespace(model=model, questioner=questioner, assessor=assessor, summarizer=summarizer, env=env)
 
 
 def source_hash() -> str:
@@ -98,7 +103,8 @@ def provenance(config: dict) -> dict:
             versions[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
             pass
-    return {"versions": VERSIONS, "packages": versions, "source_sha256": source_hash(),
+    return {"versions": VERSIONS, "summary_version": SUMMARY_VERSION,
+            "packages": versions, "source_sha256": source_hash(),
             "data_sha256": hashlib.sha256(Path(config["data"]).read_bytes()).hexdigest()}
 
 
