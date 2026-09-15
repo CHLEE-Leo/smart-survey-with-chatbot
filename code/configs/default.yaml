@@ -18,6 +18,7 @@ model:
 generation:
   question_max_tokens: 192
   assessment_max_tokens: 1024
+  summary_max_tokens: 768
 simulator:
   backend: http
   base_url: http://localhost:11435/v1

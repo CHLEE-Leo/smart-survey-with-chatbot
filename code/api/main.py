@@ -15,6 +15,7 @@ from src.environment import InterviewSession
 from src.experiment import (CODE_ROOT, build_runtime, load_config, read_checkpoint,
                             restore_checkpoint, seed_everything)
 from src.llm import LLMError
+from src.summary import closing_message
 
 
 class Profile(BaseModel):
@@ -44,20 +45,22 @@ class InterviewRun:
     def __init__(self, profile: dict, runtime, max_turns: int, policy: str):
         self.session_id = uuid.uuid4().hex
         self.runtime, self.policy = runtime, policy
-        self.sessions = [InterviewSession(profile, food, runtime.questioner, runtime.assessor, max_turns)
+        self.sessions = [InterviewSession(profile, food, runtime.questioner, runtime.assessor, max_turns,
+                                          summarizer=runtime.summarizer)
                          for food in profile["suspected_foods"]]
         self.index = 0
 
     def payload(self) -> dict:
         while self.index < len(self.sessions) and self.sessions[self.index].termination:
+            self.sessions[self.index].finish()
             self.index += 1
         if self.index == len(self.sessions):
-            # Show records and missing information, not internal hypothesis logs.
+            # Only the reviewed narrative is exposed; internal hypothesis logs stay separate.
             summaries = [{"food_id": s.food_id, "termination": s.termination,
                           "missing_information": s.assessment.missing_evidence,
-                          "messages": s.messages} for s in self.sessions]
+                          "messages": s.messages, "closing_summary": s.closing_summary.text} for s in self.sessions]
             return {"session_id": self.session_id, "done": True, "summaries": summaries,
-                    "message": "선택한 식품이 없습니다." if not summaries else "식품별 문진 기록을 확인해 주세요."}
+                    "message": closing_message([(s.food_id, s.closing_summary.text) for s in self.sessions])}
         session = self.sessions[self.index]
         if session.pending_question is None:
             if self.policy == "learned":
